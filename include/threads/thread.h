@@ -92,6 +92,10 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
+	/* 새로 추가한 필드 */
+	int64_t awake_ticks;								/* 스레드가 wait_list에서 깨어나서 ready_list로 옮겨갈 ticks 시점 */
+	/**/
+
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
@@ -122,6 +126,11 @@ void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
+
+/* 새로 추가한 함수 */
+void thread_awake(int64_t ticks);		/* 인자로 들어온 ticks보다 thread의 awake_ticks가 작거나 둘이 같으면 wait_list에 있는 스레드를 ready_list로 이동 */
+void thread_wait();									/* running 중인 스레드를 wait_list로 옮기고, ready_list에 있는 스레드 1개를 running으로 옮김 */
+/**/
 
 void thread_block (void);
 void thread_unblock (struct thread *);

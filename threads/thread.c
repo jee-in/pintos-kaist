@@ -28,6 +28,12 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* 새로 추가한 코드 */
+/* List of processes in THREAD_BLOCKED state, that is, processes
+   that are waiting for awake. */
+static struct list wait_list;
+/*`*/
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -105,9 +111,12 @@ thread_init (void) {
 	};
 	lgdt (&gdt_ds);
 
-	/* Init the globla thread context */
+	/* Init the global thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
+	/* 새로 추가한 코드 */
+	list_init (&wait_list);
+	/**/
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -210,6 +219,41 @@ thread_create (const char *name, int priority,
 	return tid;
 }
 
+/* 새로 추가한 함수 */
+/* 스레드의 awake_ticks를 기준으로 오름차순으로 새로운 스레드를 wait_list에 삽입 */
+bool cmp_priority_wait(const struct list_elem* A, const struct list_elem *B, void *aux) {
+    struct thread *thread_a = list_entry(A, struct thread, elem);
+    struct thread *thread_b = list_entry(B, struct thread, elem);
+    return thread_a->awake_ticks < thread_b->awake_ticks;
+}
+
+/* 스레드의 priority를 기준으로 내림차순으로 새로운 스레드를 ready_list에 삽입 */
+bool cmp_priority_ready(const struct list_elem* A, const struct list_elem *B, void *ㅇaux) {
+    struct thread *thread_a = list_entry(A, struct thread, elem);
+    struct thread *thread_b = list_entry(B, struct thread, elem);
+    return thread_a->priority > thread_b->priority;
+}
+
+/* running 상태에서 wait_list로 옮기기 */
+void thread_wait() {
+	//enum intr_level old_level = intr_disable();
+	list_insert_ordered(&wait_list, &thread_current()->elem, cmp_priority_wait, NULL);
+	thread_block();
+	//intr_set_level (old_level);
+}
+
+/* wait_list에서 ready_list로 옮기기 */
+void thread_awake(int64_t ticks) {
+	while (!list_empty(&wait_list) && list_entry(list_front(&wait_list), struct thread, elem)->awake_ticks <= ticks) {
+		struct thread* awake_thread = list_entry(list_pop_front(&wait_list), struct thread, elem);
+		// curr -> status를 ready로 바꿔준다. block, unblock 함수 그대로 이용
+		// ready에 넣어줄 때도 list order로 넣어줘야 한다.
+		
+		thread_unblock(awake_thread);
+	}
+}
+/**/
+
 /* Puts the current thread to sleep.  It will not be scheduled
    again until awoken by thread_unblock().
 
@@ -240,7 +284,8 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	//list_push_back (&ready_list, &t->elem);
+	list_insert_ordered(&ready_list, &t->elem, cmp_priority_ready, NULL);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -303,7 +348,7 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, cmp_priority_ready, NULL);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
