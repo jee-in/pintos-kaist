@@ -216,6 +216,10 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
+	/* 새로 추가한 코드 */
+		if (check_priority_threads())
+			thread_yield();
+
 	return tid;
 }
 
@@ -236,10 +240,10 @@ bool cmp_priority_ready(const struct list_elem* A, const struct list_elem *B, vo
 
 /* running 상태에서 wait_list로 옮기기 */
 void thread_wait() {
-	//enum intr_level old_level = intr_disable();
+	enum intr_level old_level = intr_disable();
 	list_insert_ordered(&wait_list, &thread_current()->elem, cmp_priority_wait, NULL);
 	thread_block();
-	//intr_set_level (old_level);
+	intr_set_level (old_level);
 }
 
 /* wait_list에서 ready_list로 옮기기 */
@@ -251,6 +255,67 @@ void thread_awake(int64_t ticks) {
 		
 		thread_unblock(awake_thread);
 	}
+}
+
+/* 현재 실행 중인 스레드의 priority와 ready_list의 첫 번째 스레드의 priority를 비교 */
+bool check_priority_threads() {
+    if (!list_empty(&ready_list)) {
+        if (thread_current()->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* 현재 실행 중인 스레드의 priority를 현재 실행 중인 스레드가 기다리고 있는 lock의 holder 스레드에게 기부하기 */
+void donate_priority() {
+    struct thread *curr = thread_current();
+    struct thread *holder;
+
+    while (curr->wait_on_lock != NULL) {
+        holder = curr->wait_on_lock->holder;
+
+        if (holder->priority < curr->priority) {
+            holder->priority = curr->priority;
+        }
+
+        curr = holder;
+    }
+}
+
+/*  */
+bool thread_compare_donate_priority (const struct list_elem *l, const struct list_elem *s, void *aux UNUSED)
+{
+	return list_entry (l, struct thread, donation_elem)->priority > list_entry (s, struct thread, donation_elem)->priority;
+}
+
+/*  */
+void remove_with_lock (struct lock *lock)
+{
+  struct list_elem *e;
+  struct thread *cur = thread_current ();
+
+  for (e = list_begin (&cur->donations); e != list_end (&cur->donations); e = list_next (e)){
+    struct thread *t = list_entry (e, struct thread, donation_elem);
+    if (t->wait_on_lock == lock)
+      list_remove (&t->donation_elem);
+  }
+}
+
+/*  */
+void refresh_priority (void)
+{
+  struct thread *cur = thread_current ();
+
+  cur->priority = cur->init_priority;
+  
+  if (!list_empty (&cur->donations)) {
+    list_sort (&cur->donations, thread_compare_donate_priority, 0);
+
+    struct thread *front = list_entry (list_front (&cur->donations), struct thread, donation_elem);
+    if (front->priority > cur->priority)
+      cur->priority = front->priority;
+  }
 }
 /**/
 
@@ -356,7 +421,13 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	thread_current() -> priority = new_priority;
+	thread_current() -> init_priority = new_priority;
+
+	refresh_priority();
+	if (check_priority_threads()){
+		thread_yield();
+	}
 }
 
 /* Returns the current thread's priority. */
