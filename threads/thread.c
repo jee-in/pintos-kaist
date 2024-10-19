@@ -210,7 +210,7 @@ thread_create (const char *name, int priority,
 
 	/* Add newly created thread to run queue. (status: THREAD_READY) 
 	 *	* 1. interrupt disable
-	 *  * 2. list_ordered_insert(&ready_list, ~)
+	 *  * 2. list_insert_ordered(&ready_list, ~)
 	 *  * 3. update status to THREAD_READY
 	 *  * 4. interrupt enable */
 	thread_unblock (t);
@@ -261,7 +261,7 @@ void thread_wakeup (int64_t ticks) {
 		
 	 /* Add awaken thread to run queue. (status: THREAD_READY) 
 	 *	* 1. interrupt disable
-	 *  * 2. list_ordered_insert(&ready_list, ~)
+	 *  * 2. list_insert_ordered(&ready_list, ~)
 	 *  * 3. update status to THREAD_READY
 	 *  * 4. interrupt enable */
 		thread_unblock(awake_thread); /* 여기서 스케줄링을 해줄 필요는 없음 */
