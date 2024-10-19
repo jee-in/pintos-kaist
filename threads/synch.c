@@ -65,8 +65,10 @@ sema_down (struct semaphore *sema) {
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
+
+	/* push current thread to waiter list of semaphore in descending order */
 	while (sema->value == 0) {
-		list_push_back (&sema->waiters, &thread_current ()->elem);
+		list_insert_ordered (&sema->waiters, &thread_current()->elem, thread_cmp_priority, NULL);
 		thread_block ();
 	}
 	sema->value--;
@@ -109,10 +111,17 @@ sema_up (struct semaphore *sema) {
 	ASSERT (sema != NULL);
 
 	old_level = intr_disable ();
-	if (!list_empty (&sema->waiters))
+	if (!list_empty (&sema->waiters)) {
+		/* sort in case priority have changed after inserting threads in order */
+		list_sort(&sema->waiters, thread_cmp_priority, NULL);
 		thread_unblock (list_entry (list_pop_front (&sema->waiters),
 					struct thread, elem));
+	}
 	sema->value++;
+
+	check_priority_and_yield ();
+
+	// test max priority
 	intr_set_level (old_level);
 }
 
@@ -188,8 +197,27 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
+	struct thread *curr = thread_current();
+
+	/* if there is holder for lock, set lock info to current thread */
+	if (lock->holder != NULL) {
+		struct thread *curr = thread_current ();
+    curr->wait_on_lock = lock;
+
+		/* compare between priority of lock holder's donator threads and current thread 
+		   then insert current thread to lock holder's donator list in descending order */
+    list_insert_ordered (&lock->holder->donators, &curr->donated_elem, thread_cmp_donator_priority, NULL);
+
+		/* donate priority of current thread to lock holder */
+    donate_priority ();
+	}
+
 	sema_down (&lock->semaphore);
-	lock->holder = thread_current ();
+
+	/* from now current thread no need to wait for lock
+	  * and lock holder becomes current thread */
+	curr->wait_on_lock = NULL;
+	lock->holder = curr;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -221,6 +249,12 @@ void
 lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
+
+	/* remove donators' donated_elem from donator_list */
+	remove_with_lock (lock);
+
+	/* restore initial priority or get max priority of donators */
+	refresh_priority ();
 
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
@@ -282,7 +316,11 @@ cond_wait (struct condition *cond, struct lock *lock) {
 	ASSERT (lock_held_by_current_thread (lock));
 
 	sema_init (&waiter.semaphore, 0);
-	list_push_back (&cond->waiters, &waiter.elem);
+
+	/* compare priority between condition's waiter threads and new waiter thread
+		 and insert new waiter in descending order */
+  list_insert_ordered(&cond->waiters, &waiter.elem, cmp_sem_priority, NULL);
+
 	lock_release (lock);
 	sema_down (&waiter.semaphore);
 	lock_acquire (lock);
@@ -302,9 +340,12 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	ASSERT (!intr_context ());
 	ASSERT (lock_held_by_current_thread (lock));
 
-	if (!list_empty (&cond->waiters))
+	if (!list_empty (&cond->waiters)) {
+		/* sort in case priority have changed after inserting threads in order */
+		list_sort(&cond->waiters, cmp_sem_priority, NULL);
 		sema_up (&list_entry (list_pop_front (&cond->waiters),
 					struct semaphore_elem, elem)->semaphore);
+	}
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -320,5 +361,22 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 
 	while (!list_empty (&cond->waiters))
 		cond_signal (cond, lock);
+}
+
+bool cmp_sem_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+
+	struct semaphore_elem *s1 = list_entry (a, struct semaphore_elem, elem);
+	struct semaphore_elem *s2 = list_entry (b, struct semaphore_elem, elem);
+
+	if (list_empty (&s1->semaphore.waiters))
+		return false;
+
+	if (list_empty (&s2->semaphore.waiters))
+		return true;
+
+	struct thread *t1 = list_entry (list_front (&s1->semaphore.waiters), struct thread, elem);
+	struct thread *t2 = list_entry (list_front (&s2->semaphore.waiters), struct thread, elem);
+
+	return t1->priority > t2->priority;
 }
 
