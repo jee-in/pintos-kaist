@@ -242,22 +242,22 @@ thread_create (const char *name, int priority,
 }
 
 /* list_insert_ordered에서 쓸 함수 정의 */
-bool thread_cmp_ticks(const struct list_elem* A, const struct list_elem *B, void *aux) {
-    struct thread *thread_a = list_entry(A, struct thread, elem);
-    struct thread *thread_b = list_entry(B, struct thread, elem);
+bool thread_cmp_ticks (const struct list_elem* A, const struct list_elem *B, void *aux) {
+    struct thread *thread_a = list_entry (A, struct thread, elem);
+    struct thread *thread_b = list_entry (B, struct thread, elem);
     return thread_a->wakeup_ticks < thread_b->wakeup_ticks;
 }
 
-bool thread_cmp_priority(const struct list_elem* A, const struct list_elem *B, void *aux) {
-    struct thread *thread_a = list_entry(A, struct thread, elem);
-    struct thread *thread_b = list_entry(B, struct thread, elem);
+bool thread_cmp_priority (const struct list_elem* A, const struct list_elem *B, void *aux) {
+    struct thread *thread_a = list_entry (A, struct thread, elem);
+    struct thread *thread_b = list_entry (B, struct thread, elem);
     return thread_a->priority > thread_b->priority;
 }
 
 /* blocked_list에서 ready_list로 옮기기 */
-void thread_wakeup(int64_t ticks) {
-	while (!list_empty(&blocked_list) && list_entry(list_front(&blocked_list), struct thread, elem)->wakeup_ticks <= ticks) {
-		struct thread* awake_thread = list_entry(list_pop_front(&blocked_list), struct thread, elem);
+void thread_wakeup (int64_t ticks) {
+	while (!list_empty (&blocked_list) && list_entry (list_front (&blocked_list), struct thread, elem)->wakeup_ticks <= ticks) {
+		struct thread* awake_thread = list_entry (list_pop_front (&blocked_list), struct thread, elem);
 		
 	 /* Add awaken thread to run queue. (status: THREAD_READY) 
 	 *	* 1. interrupt disable
@@ -269,10 +269,10 @@ void thread_wakeup(int64_t ticks) {
 }
 
 /* running 상태에서 blocked_list로 옮기기 */
-void thread_sleep() {
-	enum intr_level old_level = intr_disable();
-	list_insert_ordered(&blocked_list, &thread_current()->elem, thread_cmp_ticks, NULL);
-	thread_block();
+void thread_sleep () {
+	enum intr_level old_level = intr_disable ();
+	list_insert_ordered(&blocked_list, &thread_current ()->elem, thread_cmp_ticks, NULL);
+	thread_block ();
 	intr_set_level (old_level);
 }
 
@@ -377,7 +377,7 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current() -> priority = new_priority;
+	thread_current()->priority = new_priority;
 }
 
 /* Returns the current thread's priority. */
