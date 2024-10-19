@@ -95,6 +95,9 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
+	/* project 1: scheduling */
+	int64_t wakeup_ticks;							  /* wake up thread after wakeup_ticks elapses */
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -125,6 +128,12 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+
+void thread_sleep(void);
+void thread_wakeup(int64_t ticks);
+
+bool thread_cmp_ticks(const struct list_elem* A, const struct list_elem *B, void *aux);
+bool thread_cmp_priority(const struct list_elem* A, const struct list_elem *B, void *aux);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);

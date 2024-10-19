@@ -79,6 +79,14 @@ main (void) {
 
 	/* Initialize ourselves as a thread so we can use locks,
 	   then enable console locking. */
+	
+	/* initialize multi-thread system
+	 * 1. assert interrupt off
+	 * 2. init_thread (initial_thread, "main", PRI_DEFAULT);
+	 * 		- initial_thread = running_thread (); // already created in booting progress
+	 * 3. create main thread (wrapper of init_thread():BLOCKED)
+	 * 4. update main thread status to RUNNING
+	 * 5. allocate tid to main thread - tid: 1 */
 	thread_init ();
 	console_init ();
 
@@ -102,6 +110,38 @@ main (void) {
 	syscall_init ();
 #endif
 	/* Start thread scheduler and enable interrupts. */
+
+	/* 1. thread_create ("idle", PRI_MIN, idle, &idle_started);
+	 *		(1) palloc_get_page(PAL_ZERO);
+	 *		(2) init_thread (t, "idle", PRI_MIN);
+	 * 		(3) allocate_tid (); - tid: 2
+	 *  	(4) t->tf.rip = (uintptr_t) kernel_thread;
+	 *  			t->tf.R.rdi = (uint64_t) idle;
+	 *  			t->tf.R.rsi = (uint64_t) &idle_started;
+	 *  	(5) thread_unblock (t);
+	 * 			* Add newly created thread to run queue. (status: THREAD_READY) 
+	 *			* (1) interrupt disable
+	 *  		* (2) list_ordered_insert(&ready_list, ~)
+	 *  		* (3) update status to THREAD_READY
+	 *  		* (4) interrupt enable
+	 *  	(6) thread_yield ();
+	 * 			* Running thread yield CPU to the first thread of ready list
+	 * 			* (1) interrupt disable
+	 * 			* (2) insert thread to ready list (if not idle thread)
+	 * 			* (3) do_schedule()
+	 * 					* (1) assert interrupt off
+	 *  				* (2) clear destruction_req and free pages
+	 *  				* (3) update current thread status to THREAD_READY
+	 *  				* (4) schedule()
+	 *  					* (1) assert interrupt off
+	 * 						* (2) assert current thread not running
+	 *    				* (3) update next thread status to THREAD_RUNNING
+	 *    				* (4) initialize thread_ticks to 0
+	 * 						* (5) if current thread status is THREAD_DYING and not initial thread, insert it to destruction_req
+	 * 						* (6) thread launch (next)
+	 * 								-  context switching from current thread to next thread
+	 * 			* (4) interrupt enable
+	 * 2. intr_enable ();  */
 	thread_start ();
 	serial_init_queue ();
 	timer_calibrate ();
