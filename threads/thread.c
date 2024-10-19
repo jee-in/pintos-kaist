@@ -376,7 +376,20 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current()->priority = new_priority;
+	struct thread *curr = thread_current ();
+
+	/* set new priority to thread */
+	curr->priority = new_priority;
+
+	/* if ready list is empty, no need to schedule */
+	if (list_empty (&ready_list))
+    return;
+    
+	/* compare priority between current thread and the first thread in ready list
+			and schedule if needed */
+  struct thread *ready = list_entry (list_begin (&ready_list), struct thread, elem);
+	if (curr->priority < ready->priority)
+		thread_yield ();
 }
 
 /* Returns the current thread's priority. */
