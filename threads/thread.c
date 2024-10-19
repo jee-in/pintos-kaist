@@ -94,6 +94,8 @@ static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
    finishes. */
 void
 thread_init (void) {
+	printf("thread_init() start\n");
+
 	ASSERT (intr_get_level () == INTR_OFF);
 
 	/* Reload the temporal gdt for the kernel
@@ -115,12 +117,16 @@ thread_init (void) {
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
+
+	printf("thread_init() end\n");
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
    Also creates the idle thread. */
 void
 thread_start (void) {
+	printf("thread_start() start\n");
+
 	/* Create the idle thread. */
 	struct semaphore idle_started;
 	sema_init (&idle_started, 0);
@@ -131,6 +137,9 @@ thread_start (void) {
 
 	/* Wait for the idle thread to initialize idle_thread. */
 	sema_down (&idle_started);
+
+	printf("thread_start() end\n");
+
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -179,6 +188,8 @@ thread_print_stats (void) {
 tid_t
 thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
+	printf("thread_create() start\n");
+
 	struct thread *t;
 	tid_t tid;
 
@@ -207,6 +218,7 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
+	printf("thread_create() end\n");
 	return tid;
 }
 
@@ -279,6 +291,8 @@ thread_tid (void) {
    returns to the caller. */
 void
 thread_exit (void) {
+	printf("thread_exit() start\n");
+
 	ASSERT (!intr_context ());
 
 #ifdef USERPROG
@@ -290,12 +304,17 @@ thread_exit (void) {
 	intr_disable ();
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
+
+	printf("thread_exit() end\n");
 }
 
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
 void
 thread_yield (void) {
+	printf("thread_yield() start\n");
+
+
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;
 
@@ -306,6 +325,8 @@ thread_yield (void) {
 		list_push_back (&ready_list, &curr->elem);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
+
+	printf("thread_yield() end\n");
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
@@ -387,11 +408,15 @@ idle (void *idle_started_ UNUSED) {
 /* Function used as the basis for a kernel thread. */
 static void
 kernel_thread (thread_func *function, void *aux) {
+	printf("kernel_thread() start\n");
+
 	ASSERT (function != NULL);
 
 	intr_enable ();       /* The scheduler runs with interrupts off. */
 	function (aux);       /* Execute the thread function. */
 	thread_exit ();       /* If function() returns, kill the thread. */
+
+	printf("kernel_thread() end\n");
 }
 
 
@@ -399,6 +424,8 @@ kernel_thread (thread_func *function, void *aux) {
    NAME. */
 static void
 init_thread (struct thread *t, const char *name, int priority) {
+	printf("init_thread() start\n");
+
 	ASSERT (t != NULL);
 	ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
 	ASSERT (name != NULL);
@@ -409,6 +436,8 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	printf("init_thread() end\n");
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -418,15 +447,23 @@ init_thread (struct thread *t, const char *name, int priority) {
    idle_thread. */
 static struct thread *
 next_thread_to_run (void) {
-	if (list_empty (&ready_list))
+	printf("next_thread_to_run() start\n");
+
+	if (list_empty (&ready_list)) {
+		printf("next_thread_to_run() end\n");
 		return idle_thread;
-	else
+	}
+	else {
+		printf("next_thread_to_run() end\n");
 		return list_entry (list_pop_front (&ready_list), struct thread, elem);
+	}
 }
 
 /* Use iretq to launch the thread */
 void
 do_iret (struct intr_frame *tf) {
+	printf("do_iret() start (will not print message when function returns)\n");
+
 	__asm __volatile(
 			"movq %0, %%rsp\n"
 			"movq 0(%%rsp),%%r15\n"
@@ -464,6 +501,8 @@ do_iret (struct intr_frame *tf) {
    added at the end of the function. */
 static void
 thread_launch (struct thread *th) {
+	printf("thread_launch() start (will not print message when function returns)\n");
+
 	uint64_t tf_cur = (uint64_t) &running_thread ()->tf;
 	uint64_t tf = (uint64_t) &th->tf;
 	ASSERT (intr_get_level () == INTR_OFF);
@@ -527,6 +566,8 @@ thread_launch (struct thread *th) {
  * It's not safe to call printf() in the schedule(). */
 static void
 do_schedule(int status) {
+	printf("do_schedule() start\n");
+
 	ASSERT (intr_get_level () == INTR_OFF);
 	ASSERT (thread_current()->status == THREAD_RUNNING);
 	while (!list_empty (&destruction_req)) {
@@ -536,10 +577,14 @@ do_schedule(int status) {
 	}
 	thread_current ()->status = status;
 	schedule ();
+
+	printf("do_schedule() end\n");
 }
 
 static void
 schedule (void) {
+	printf("schedule() start\n");
+
 	struct thread *curr = running_thread ();
 	struct thread *next = next_thread_to_run ();
 
@@ -574,6 +619,8 @@ schedule (void) {
 		 * of current running. */
 		thread_launch (next);
 	}
+
+	printf("schedule() end\n");
 }
 
 /* Returns a tid to use for a new thread. */
