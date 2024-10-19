@@ -214,30 +214,8 @@ thread_create (const char *name, int priority,
 	 *  * 3. update status to THREAD_READY
 	 *  * 4. interrupt enable */
 	thread_unblock (t);
-	
-	struct thread *curr = thread_current();
-	struct thread *ready_thread = list_entry(list_front(&ready_list), struct thread, elem);
-	if (curr->priority < ready_thread->priority) {
-		/* Running thread yield CPU to the first thread of ready list
-		 * 1. interrupt disable
-		 * 2. insert thread to ready list (if not idle thread)
-		 * 3. do_schedule()
-		 * 	* (1) assert interrupt off
-		 *  * (2) clear destruction_req and free pages
-		 *  * (3) update current thread status to THREAD_READY
-		 *  * (4) schedule()
-		 *  	* (1) assert interrupt off
-		 * 		* (2) assert current thread not running
-		 *    * (3) update next thread status to THREAD_RUNNING
-		 *    * (4) initialize thread_ticks to 0
-		 * 		* (5) if current thread status is THREAD_DYING and not initial thread,
-		 * 					insert it to destruction_req
-		 * 		* (6) thread launch (next)
-		 * 				-  context switching from current thread to next thread
-		 * 4. interrupt enable */
-		thread_yield();
-		// 커널 모드에서 수행 중인 스레드는 인터럽트 처리 중이 아니므로, 스레드 양보는 인터럽트와 무관하게 즉시 처리될 수 있음. intr_yield_on_return() 불필요함!
-	}
+	check_priority_and_yield ();
+
 	return tid;
 }
 
@@ -274,6 +252,24 @@ void thread_sleep () {
 	list_insert_ordered(&blocked_list, &thread_current ()->elem, thread_cmp_ticks, NULL);
 	thread_block ();
 	intr_set_level (old_level);
+}
+
+/* Compares priority between current thread and first thread of ready list */
+void 
+check_priority_and_yield () {
+	// [고민] idle 스레드인지 확인하는 절차가 필요할까?
+	// if (thread_current () == idle_thread)
+	// 	return;
+
+	if (list_empty (&ready_list))
+		return;
+	
+	struct thread *curr = thread_current();
+	struct thread *ready = list_entry (list_front(&ready_list), struct thread, elem);
+
+	if (curr->priority < ready->priority)
+		thread_yield();
+	// 커널 모드에서 수행 중인 스레드는 인터럽트 처리 중이 아니므로, 스레드 양보는 인터럽트와 무관하게 즉시 처리될 수 있음. intr_yield_on_return() 불필요함!
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled
@@ -376,26 +372,76 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	struct thread *curr = thread_current ();
-
 	/* set new priority to thread */
-	curr->priority = new_priority;
-
-	/* if ready list is empty, no need to schedule */
-	if (list_empty (&ready_list))
-    return;
-    
-	/* compare priority between current thread and the first thread in ready list
-			and schedule if needed */
-  struct thread *ready = list_entry (list_begin (&ready_list), struct thread, elem);
-	if (curr->priority < ready->priority)
-		thread_yield ();
+	thread_current ()->priority = new_priority;
+	thread_current() -> init_priority = new_priority;
+	refresh_priority ();
+	check_priority_and_yield ();
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) {
 	return thread_current ()->priority;
+}
+
+/* Donates priority of current thread to lock holder */
+void 
+donate_priority () {
+	struct thread *curr = thread_current();
+	struct thread *holder;
+
+	/* loop for nested donation (may limit on depth) */
+	while (curr->wait_on_lock != NULL) {
+		/* donate priority to lock holder */
+		holder = curr->wait_on_lock->holder;
+		if (holder->priority < curr->priority)
+			holder->priority = curr->priority;
+
+		/* set current holder to lock holer */
+		curr = holder;
+	}
+}
+
+/* Compares priority between donators */
+bool
+thread_cmp_donator_priority (const struct list_elem *a, 
+				const struct list_elem *b, void *aux UNUSED) {
+	struct thread *t1 = list_entry (a, struct thread, donated_elem);
+	struct thread *t2 = list_entry (b, struct thread, donated_elem);
+
+	return t1->priority > t2->priority;
+}
+
+/* Remove donators' donated_elem from donator_list */
+void 
+remove_with_lock (struct lock *lock) {
+  struct list_elem *e;
+  struct thread *curr = thread_current ();
+
+  for (e = list_begin (&curr->donators); e != list_end (&curr->donators); e = list_next (e)){
+    struct thread *t = list_entry (e, struct thread, donated_elem);
+    if (t->wait_on_lock == lock)
+      list_remove (&t->donated_elem);
+  }
+}
+
+/* Restores initial priority or get max priority of donators */
+void 
+refresh_priority (void) {
+  struct thread *curr = thread_current ();
+  curr->priority = curr->init_priority;
+  
+  if (!list_empty (&curr->donators)) {
+		/* sort in case priority have changed after inserting threads in order */
+    list_sort (&curr->donators, thread_cmp_donator_priority, 0);
+		/* select max priority of donators and set it to current priority */
+		struct thread *max = list_entry (list_front (&curr->donators), struct thread, donated_elem);
+
+		// [고민] if문이 필요할까?
+		if (max->priority > curr->priority)
+			curr->priority = max->priority;
+  }
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -486,6 +532,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	/* added for project 1 */
+	t->init_priority = priority;
+	t->wait_on_lock = NULL;
+	list_init (&t->donators);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

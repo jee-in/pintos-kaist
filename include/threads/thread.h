@@ -95,8 +95,12 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
-	/* project 1: scheduling */
+	/* added for project 1 */
 	int64_t wakeup_ticks;							  /* wake up thread after wakeup_ticks elapses */
+	int init_priority;									/* restore initial priority */
+	struct lock *wait_on_lock;					/* lock info that thread is waiting for */
+	struct list donators;								/* list of threads that donate priority to it */
+	struct list_elem donated_elem;			/* elem used by donator threads */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -149,6 +153,20 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/* added for project 1: alarm clock */
+void thread_sleep();
+void thread_wakeup(int64_t ticks);
+bool thread_cmp_ticks(const struct list_elem* A, const struct list_elem *B, void *aux);
+
+/* added for project 1: priority scheduling */
+bool thread_cmp_priority(const struct list_elem* A, const struct list_elem *B, void *aux);
+void donate_priority();
+bool thread_cmp_donator_priority (const struct list_elem *a, 
+																		 const struct list_elem *b, void *aux UNUSED);
+void remove_with_lock(struct lock *lock);
+void refresh_priority (void);
+void check_priority_and_yield (void);	
 
 void do_iret (struct intr_frame *tf);
 
