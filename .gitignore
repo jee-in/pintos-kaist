@@ -1,0 +1,10 @@
+# Object files
+*.o
+
+# Build directories
+*/build/*
+/bin/
+
+# Debug and log files
+*.log
+*.d
