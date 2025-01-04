@@ -39,34 +39,37 @@ process_init (void) {
  * thread id, or TID_ERROR if the thread cannot be created.
  * Notice that THIS SHOULD BE CALLED ONCE. */
 tid_t
-process_create_initd (const char *file_name) {
-	char *fn_copy;
+process_create_initd (const char *command_line) {
+	char *cmdline_copy_page;
 	tid_t tid;
+	char *saveptr;
+	char *file_name;
 
-	/* Make a copy of FILE_NAME.
+	/* Make a copy of FILE_NAME (precisely, it's COMMAND_LINE).
 	 * Otherwise there's a race between the caller and load(). */
-	fn_copy = palloc_get_page (0);
-	if (fn_copy == NULL)
+	cmdline_copy_page = palloc_get_page (0);
+	if (cmdline_copy_page == NULL)
 		return TID_ERROR;
-	strlcpy (fn_copy, file_name, PGSIZE);
+	strlcpy (cmdline_copy_page, command_line, PGSIZE);
+	file_name = strtok_r (command_line, " ", &saveptr);
 
-	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	/* Create a new thread to execute FILE_NAME. (precisely, it's COMMAND_LINE) */
+	tid = thread_create (file_name, PRI_DEFAULT, initd, cmdline_copy_page);
 	if (tid == TID_ERROR)
-		palloc_free_page (fn_copy);
+		palloc_free_page (cmdline_copy_page);
 	return tid;
 }
 
 /* A thread function that launches first user process. */
 static void
-initd (void *f_name) {
+initd (void *cmdline_copy_page) {
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
 
 	process_init ();
 
-	if (process_exec (f_name) < 0)
+	if (process_exec (cmdline_copy_page) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
 }
@@ -161,8 +164,12 @@ error:
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int
-process_exec (void *f_name) {
-	char *file_name = f_name;
+process_exec (void *cmdline_page) {
+	char *cmdline_page_ptr = cmdline_page;
+	char *argv[128];
+  int argc = 0;
+	char *token;
+	char *saveptr;
 	bool success;
 
 	/* We cannot use the intr_frame in the thread structure.
@@ -176,19 +183,68 @@ process_exec (void *f_name) {
 	/* We first kill the current context */
 	process_cleanup ();
 
+	/* Tokenize command line */
+	token = strtok_r (cmdline_page_ptr, " ", &saveptr);
+	while (token != NULL) {
+		argv[argc++] = token;
+		token = strtok_r (NULL, ",", &saveptr);
+	}
+
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	success = load (argv[0], &_if);
 
 	/* If load failed, quit. */
-	palloc_free_page (file_name);
 	if (!success)
 		return -1;
+
+	/* Set up argument stack. */
+	argument_stack(argv, argc, &_if);
+	palloc_free_page (cmdline_page);
 
 	/* Start switched process. */
 	do_iret (&_if);
 	NOT_REACHED ();
 }
 
+void 
+argument_stack(char *argv[], int argc, struct intr_frame *if_) {
+    char* arg_addr[argc];
+
+    /* Push arguments */
+    for (int i = argc -1; i >= 0; i--) {
+				int arg_len = strlen(argv[i]) + 1;
+        if_->rsp -= arg_len;
+        for (int j = 0; j < arg_len; j++) {
+            ((char *)(if_->rsp))[j] = argv[i][j]; 				/* memcpy(if_>rsp, argv[i], arg_len) */
+        }
+        arg_addr[i] = (char *)if_->rsp; 									/* save the address of argument */
+    }
+
+		/* Push padding for 8 byte alignment */
+		size_t padding_size = (uintptr_t)(if_->rsp) & 0x7;
+		if_->rsp -= padding_size;
+		memset(if_->rsp, 0, padding_size);
+
+		/* Push NULL pointer */
+    if_->rsp -= sizeof(char *);
+    *(char **)(if_->rsp) = 0;
+
+		/* Push addresses of arguments */
+    for (int i = argc - 1; i >= 0; i--) {
+        if_->rsp -= sizeof(char *);
+        *(char **)(if_->rsp) = (char *)arg_addr[i];
+    }
+
+		/* Push fake return address */
+    if_->rsp -= sizeof(void *);
+    *(void **)(if_->rsp) = 0;
+
+		/* Set thread state */
+		if_->R.rdi = argc;
+	 	if_->R.rsi = (char *)if_->rsp + sizeof(void*);
+
+		hex_dump((uintptr_t)&if_->rsp, (void *)if_->rsp, USER_STACK - (uintptr_t)if_->rsp, true);
+}
 
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
@@ -340,6 +396,9 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
+	}
+	else {
+		// printf("load: %s: open successed!\n", file_name);
 	}
 
 	/* Read and verify executable header. */

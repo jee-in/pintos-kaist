@@ -28,6 +28,14 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+#define FD_PAGES 2	//page는 1,2,3 다 상관 없음 (oom_update)
+#define FD_MAX 128
+#define STD_IN 0
+#define STD_OUT 1
+#define STD_ERR 2
+#define PROCESS_NORM 0
+#define PROCESS_ERR -1
+
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -105,6 +113,8 @@ struct thread {
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
+	struct file **fd_table;
+	int next_fd;
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */

@@ -257,9 +257,8 @@ void thread_sleep () {
 /* Compares priority between current thread and first thread of ready list */
 void 
 check_priority_and_yield () {
-	// [고민] idle 스레드인지 확인하는 절차가 필요할까?
-	// if (thread_current () == idle_thread)
-	// 	return;
+	if (thread_current () == idle_thread)
+		return;
 
 	if (list_empty (&ready_list))
 		return;
@@ -268,8 +267,10 @@ check_priority_and_yield () {
 	struct thread *ready = list_entry (list_front(&ready_list), struct thread, elem);
 
 	if (curr->priority < ready->priority)
-		thread_yield();
-	// 커널 모드에서 수행 중인 스레드는 인터럽트 처리 중이 아니므로, 스레드 양보는 인터럽트와 무관하게 즉시 처리될 수 있음. intr_yield_on_return() 불필요함!
+		if (intr_context())
+			intr_yield_on_return();
+		else
+			thread_yield();
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled
@@ -438,7 +439,6 @@ refresh_priority (void) {
 		/* select max priority of donators and set it to current priority */
 		struct thread *max = list_entry (list_front (&curr->donators), struct thread, donated_elem);
 
-		// [고민] if문이 필요할까?
 		if (max->priority > curr->priority)
 			curr->priority = max->priority;
   }
